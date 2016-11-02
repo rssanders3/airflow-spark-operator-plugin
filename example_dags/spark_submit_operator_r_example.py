@@ -7,6 +7,8 @@ import os
 
 DAG_ID = os.path.basename(__file__).replace(".pyc", "").replace(".py", "")
 
+APPLICATION_FILE_PATH = "~/spark-test/spark_test.R"
+
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
@@ -17,5 +19,6 @@ dag = DAG(DAG_ID, default_args=default_args, schedule_interval=None, start_date=
 
 dummy = SparkSubmitOperator(
     task_id='spark-submit-r',
+    application_file=APPLICATION_FILE_PATH,
     dag=dag)
 
