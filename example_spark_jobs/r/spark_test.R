@@ -1,5 +1,5 @@
 library(SparkR)
 
 sc = sparkR.init()
-lines = SparkR:::textFile(sc, "hdfs:///user/cloudera/express-deployment.json")
-collect(lines)
+rdd = SparkR:::parallelize(sc, 1:5)
+SparkR:::collect(rdd)

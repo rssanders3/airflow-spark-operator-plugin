@@ -13,17 +13,44 @@
 # limitations under the License.
 
 from airflow.plugins_manager import AirflowPlugin
+from airflow.hooks import HttpHook
+from airflow.models import BaseOperator
 from airflow.operators import BashOperator
-from airflow.utils.decorators import apply_defaults
+from airflow.utils import apply_defaults, AirflowException
 import logging
+import textwrap
+import time
 
 
 class SparkSubmitOperator(BashOperator):
     """
-   Execute a spark-submit command.
-   :param bash_command: The command, set of commands or reference to a
-       bash script (must be '.sh') to be executed.
-   :type bash_command: string
+   An operator which executes the spark-submit command through Airflow. This operator accepts all the desired
+   arguments and assembles the spark-submit command which is then executed by the BashOperator.
+
+   :param application_file: Path to a bundled jar including your application
+        and all dependencies. The URL must be globally visible inside of
+        your cluster, for instance, an hdfs:// path or a file:// path
+        that is present on all nodes.
+   :type application_file: string
+   :param main_class: The entry point for your application
+        (e.g. org.apache.spark.examples.SparkPi)
+   :type main_class: string
+   :param master: The master value for the cluster.
+        (e.g. spark://23.195.26.187:7077 or yarn-client)
+   :type master: string
+   :param conf: Arbitrary Spark configuration property in key=value format.
+        For values that contain spaces wrap “key=value” in quotes.
+   :type conf: string
+   :param deploy_mode: Whether to deploy your driver on the worker nodes
+        (cluster) or locally as an external client (default: client)
+   :type deploy_mode: string
+   :param other_spark_options: Other options you would like to pass to
+        the spark submit command that isn't covered by the current
+        options. (e.g. --files /path/to/file.xml)
+   :type other_spark_options: string
+   :param application_args: Arguments passed to the main method of your
+        main class, if any.
+   :type application_args: string
    :param xcom_push: If xcom_push is True, the last line written to stdout
        will also be pushed to an XCom when the bash command completes.
    :type xcom_push: bool
@@ -35,7 +62,7 @@ class SparkSubmitOperator(BashOperator):
    :type output_encoding: output encoding of bash command
    """
 
-    template_fields = ('conf', 'other_spark_options', 'application_args', 'env')  # todo: review exactly what this is and how it can be used
+    template_fields = ('conf', 'other_spark_options', 'application_args', 'env')
     template_ext = []
     ui_color = '#e47128'
 
@@ -53,7 +80,11 @@ class SparkSubmitOperator(BashOperator):
             env=None,
             output_encoding='utf-8',
             *args, **kwargs):
-        super(SparkSubmitOperator, self).__init__(bash_command=None, *args, **kwargs)
+        self.bash_command = ""
+        self.env = env
+        self.output_encoding = output_encoding
+        self.xcom_push_flag = xcom_push
+        super(SparkSubmitOperator, self).__init__(bash_command=self.bash_command, xcom_push=xcom_push, env=env, output_encoding=output_encoding, *args, **kwargs)
         self.application_file = application_file
         self.main_class = main_class
         self.master = master
@@ -61,29 +92,25 @@ class SparkSubmitOperator(BashOperator):
         self.deploy_mode = deploy_mode
         self.other_spark_options = other_spark_options
         self.application_args = application_args
-        self.env = env
-        self.output_encoding = output_encoding
-        self.xcom_push_flag = xcom_push
-
-        self.bash_command = ""
 
     def execute(self, context):
-        logging.info("Executing SparkSubmitOperator")
+        logging.info("Executing SparkSubmitOperator.execute(context)")
+
         self.bash_command = "spark-submit "
-        if self.is_not_null_and_is_not_empty(self.main_class):
+        if self.is_not_null_and_is_not_empty_str(self.main_class):
             self.bash_command += "--class " + self.main_class + " "
-        if self.is_not_null_and_is_not_empty(self.master):
+        if self.is_not_null_and_is_not_empty_str(self.master):
             self.bash_command += "--master " + self.master + " "
-        if self.is_not_null_and_is_not_empty(self.deploy_mode):
+        if self.is_not_null_and_is_not_empty_str(self.deploy_mode):
             self.bash_command += "--deploy-mode " + self.deploy_mode + " "
-        if self.is_not_null_and_is_not_empty(self.conf):
+        if self.is_not_null_and_is_not_empty_str(self.conf):
             self.bash_command += "--conf " + self.conf + " "
-        if self.is_not_null_and_is_not_empty(self.other_spark_options):
+        if self.is_not_null_and_is_not_empty_str(self.other_spark_options):
             self.bash_command += self.other_spark_options + " "
 
         self.bash_command += self.application_file + " "
 
-        if self.is_not_null_and_is_not_empty(self.application_args):
+        if self.is_not_null_and_is_not_empty_str(self.application_args):
             self.bash_command += self.application_args + " "
 
         logging.info("Finished assembling bash_command in SparkSubmitOperator: " + str(self.bash_command))
@@ -91,15 +118,172 @@ class SparkSubmitOperator(BashOperator):
         logging.info("Executing bash execute statement")
         super(SparkSubmitOperator, self).execute(context)
 
+        logging.info("Finished executing SparkSubmitOperator.execute(context)")
+
     @staticmethod
-    def is_not_null_and_is_not_empty(value):
+    def is_not_null_and_is_not_empty_str(value):
         return value is not None and value != ""
+
+
+# NOTE: STILL IN PROGRESS
+class LivySparkOperator(BaseOperator):
+    """
+   Operator to facilitate interacting with the Livy Server which executes Apache Spark code via a REST API.
+
+   :param spark_script: Scala, Python or R code to submit to the Livy Server (templated)
+   :type spark_script: string
+   :param session_kind: Type of session to setup with Livy. This will determine which type of code will be accepted. Possible values include "spark" (executes Scala code), "pyspark" (executes Python code) or "sparkr" (executes R code).
+   :type session_kind: string
+   :param http_conn_id: The http connection to run the operator against
+   :type http_conn_id: string
+   :param poll_interval: The polling interval to use when checking if the code in spark_script has finished executing. In seconds. (default: 30 seconds)
+   :type poll_interval: integer
+   """
+
+    template_fields = ['spark_script']  # todo : make sure this works
+    template_ext = ['.py', '.R']
+    ui_color = '#e47128'  # todo: new color
+
+    @apply_defaults
+    def __init__(
+            self,
+            spark_script,
+            session_kind="spark",  # spark, pyspark, or sparkr
+            http_conn_id='http_default',
+            poll_interval=30,
+            *args, **kwargs):
+        super(LivySparkOperator, self).__init__(*args, **kwargs)
+
+        self.spark_script = spark_script
+        self.session_kind = session_kind
+        self.http_conn_id = http_conn_id
+        self.poll_interval = poll_interval
+
+        self.http = HttpHook("GET", http_conn_id=self.http_conn_id)
+
+    def execute(self, context):
+        logging.info("Executing LivySparkOperator.execute(context)")
+
+        logging.info("Validating arguments...")
+        self._validate_arguments()
+        logging.info("Finished validating arguments")
+
+        logging.info("Getting Livy Session Id from Server...")
+        session_id = self._get_session_id()
+        logging.info("Finished getting Livy Session Id from Server. (session_id: " + str(session_id) + ")")
+
+        if session_id is None:
+            raise AirflowException("Could not obtain a Session ID from Livy Server")
+
+        logging.info("Submitting spark script...")
+        statement_id, response = self._submit_spark_script(session_id=session_id)
+        logging.info("Finished submitting spark script. (statement_id: " + str(statement_id) + ", response: " + str(response) + ")")
+
+        if response is None:
+            logging.info("Spark job did not complete immediately. Starting to Poll for completion...")
+            while response is None:  # todo: test execution_timeout
+                logging.info("Sleeping for " + self.poll_interval + " seconds")
+                time.sleep(self.poll_interval)
+                logging.info("Checking if Spark job has completed...")
+                response = self._get_session_statement_response(session_id=session_id, statement_id=statement_id)
+                logging.info("Finished checking if Spark job has completed. (response: " + str(response) + ")")
+
+        logging.info("Finished Polling for completion. (response: " + str(response) + ")")
+
+        logging.info("Session Logs: " + str(self._get_session_logs(session_id=session_id)))
+
+        logging.info("Closing session...")
+        response = self._close_session(session_id=session_id)
+        logging.info("Finished closing session. (response: " + str(response) + ")")
+
+        logging.info("Finished executing LivySparkOperator.execute(context)")
+
+    def _validate_arguments(self):
+        if self.session_kind is None or self.session_kind == "":
+            raise AirflowException(
+                "session_kind argument is invalid. It is empty or None. (value: '" + str(self.session_kind) + "')")
+        elif self.session_kind not in ["spark", "pyspark", "sparkr"]:
+            raise AirflowException(
+                "session_kind argument is invalid. It should be set to 'spark', 'pyspark', or 'sparkr'. (value: '" + str(
+                    self.session_kind) + "')")
+
+    def _get_session_id(self):
+        sessions = self._get_sessions()
+        session_id = None
+        for session in sessions:
+            if self.session_kind in session:
+                session_id = ""
+
+        if session_id is None:
+            session_id = self._create_session()
+
+        return session_id
+
+    def _get_sessions(self):
+        method = "GET"
+        endpoint = "sessions"
+        return self._http_rest_call(method=method, endpoint=endpoint)
+
+    def _get_session_logs(self, session_id):
+        method = "GET"
+        endpoint = "sessions/" + session_id + "/logs"
+        return self._http_rest_call(method=method, endpoint=endpoint)
+
+    def _create_session(self):
+        method = "POST"
+        endpoint = "sessions"
+
+        data = {
+            "kind": self.session_kind
+        }
+
+        response = self._http_rest_call(method=method, endpoint=endpoint, data=data)
+
+        return response.get_session()  # todo: create function to get sessions from response
+
+    def _submit_spark_script(self, session_id):
+        method = "POST"
+        endpoint = "sessions/" + str(session_id) + "/statements"
+
+        data = {
+            'code': textwrap.dedent(self.spark_script)
+        }
+
+        response = self._http_rest_call(method=method, endpoint=endpoint, data=data)
+
+        statement_id = None
+        return statement_id, response
+
+    def _get_session_statement_response(self, session_id, statement_id):
+        method = "GET"
+        endpoint = "sessions/" + str(session_id) + "/statements"
+        response = self._http_rest_call(method=method, endpoint=endpoint)
+
+        for statement in response.get_statements():  # todo: create function to get statements from response
+            if statement.get_id() == statement_id:  # todo: create function to get statement_id from statement
+                return response
+
+        return None
+
+    def _close_session(self, session_id):
+        method = "DELETE"
+        url_path = "sessions/" + str(session_id)
+        endpoint = self._get_endpoint(url_path)
+        return self._http_rest_call(method=method, endpoint=endpoint)
+
+    def _http_rest_call(self, method, endpoint, data=None, headers=None, extra_options=None):
+        if not extra_options:
+            extra_options = {}
+        logging.info("Performing HTTP REST call... (method: " + str(method) + ", endpoint: " + str(endpoint) + ", data: " + str(data) + ", headers: " + str(headers) + ")")
+        self.http.method = method
+        response = self.http.run(endpoint, data, headers, extra_options=extra_options)
+        return response
 
 
 # Defining the plugin class
 class SparkOperatorPlugin(AirflowPlugin):
     name = "spark_operator_plugin"
-    operators = [SparkSubmitOperator]
+    operators = [SparkSubmitOperator, LivySparkOperator]
     flask_blueprints = []
     hooks = []
     executors = []
