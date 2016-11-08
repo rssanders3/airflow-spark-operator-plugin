@@ -65,7 +65,7 @@ class SparkSubmitOperator(BashOperator):
 
     template_fields = ('conf', 'other_spark_options', 'application_args', 'env')
     template_ext = []
-    ui_color = '#e47128'
+    ui_color = '#e47128'  # Apache Spark's Main Color: Orange
 
     @apply_defaults
     def __init__(
@@ -126,7 +126,6 @@ class SparkSubmitOperator(BashOperator):
         return value is not None and value != ""
 
 
-# NOTE: STILL IN PROGRESS
 class LivySparkOperator(BaseOperator):
     """
    Operator to facilitate interacting with the Livy Server which executes Apache Spark code via a REST API.
@@ -142,10 +141,9 @@ class LivySparkOperator(BaseOperator):
    """
 
     template_fields = ['spark_script']  # todo : make sure this works
-    template_ext = ['.py', '.R']
-    ui_color = '#f0701f'  # todo: new color?
+    template_ext = ['.py', '.R', '.r']
+    ui_color = '#34a8dd'  # Clouderas Main Color: Blue
 
-    session_state_polling_interval = 10
     acceptable_response_codes = [200, 201]
 
     @apply_defaults
@@ -172,24 +170,23 @@ class LivySparkOperator(BaseOperator):
         self._validate_arguments()
         logging.info("Finished validating arguments")
 
-        logging.info("Getting Livy Session Id from Server...")
+        logging.info("Creating a Livy Session...")
         session_id = self._create_session()
-        logging.info("Finished getting Livy Session Id from Server. (session_id: " + str(session_id) + ")")
-
-        if session_id is None or session_id == "":
-            raise AirflowException("Could not obtain a Session ID from Livy Server")
+        logging.info("Finished creating a Livy Session. (session_id: " + str(session_id) + ")")
 
         logging.info("Submitting spark script...")
         statement_id, overall_statements_state = self._submit_spark_script(session_id=session_id)
         logging.info("Finished submitting spark script. (statement_id: " + str(statement_id) + ", overall_statements_state: " + str(overall_statements_state) + ")")
 
-        if overall_statements_state == "running":
+        poll_for_completion = (overall_statements_state == "running")
+
+        if poll_for_completion:
             logging.info("Spark job did not complete immediately. Starting to Poll for completion...")
 
         while overall_statements_state == "running":  # todo: test execution_timeout
-            logging.info("Sleeping for " + str(self.poll_interval) + " seconds")
+            logging.info("Sleeping for " + str(self.poll_interval) + " seconds...")
             time.sleep(self.poll_interval)
-            logging.info("Checking if Spark job has completed...")
+            logging.info("Finished sleeping. Checking if Spark job has completed...")
             statements = self._get_session_statements(session_id=session_id)
 
             is_all_complete = True
@@ -198,15 +195,17 @@ class LivySparkOperator(BaseOperator):
                     is_all_complete = False
 
             if is_all_complete:
-                overall_statements_state = "finished"
+                overall_statements_state = "available"
+
             logging.info("Finished checking if Spark job has completed. (overall_statements_state: " + str(overall_statements_state) + ")")
 
-        logging.info("Finished Polling for completion.")
+        if poll_for_completion:
+            logging.info("Finished Polling for completion.")
 
-        logging.info("Session Logs: " + str(self._get_session_logs(session_id=session_id)))
+        logging.info("Session Logs:\n" + str(self._get_session_logs(session_id=session_id)))
 
         for statement in self._get_session_statements(session_id):
-            logging.info("statement '" + str(statement["id"]) + "' output:\n" + str(statement["output"]))
+            logging.info("Statement '" + str(statement["id"]) + "' Output:\n" + str(statement["output"]))
 
         logging.info("Closing session...")
         response = self._close_session(session_id=session_id)
@@ -263,9 +262,10 @@ class LivySparkOperator(BaseOperator):
             if session_state == "starting":
                 logging.info("Session is starting. Polling to see if it is ready...")
 
+            session_state_polling_interval = 10
             while session_state == "starting":
-                logging.info("Sleeping for " + str(self.session_state_polling_interval) + " seconds")
-                time.sleep(self.session_state_polling_interval)
+                logging.info("Sleeping for " + str(session_state_polling_interval) + " seconds")
+                time.sleep(session_state_polling_interval)
                 session_state_check_response = self._get_session(session_id=session_id)
                 session_state = session_state_check_response["state"]
                 logging.info("Got latest session state as '" + session_state + "'")

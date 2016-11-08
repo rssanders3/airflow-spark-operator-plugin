@@ -7,7 +7,6 @@ A plugin to Apache Airflow (Documentation: https://pythonhosted.org/airflow/, So
 
 ## TODO List
 
-* Finish LivySparkOperator
 * Test extensively
 
 ## How do Deploy
@@ -53,6 +52,13 @@ Parameters:
 The executors need to have access to the spark-submit command on the local commandline shell. Spark libraries will need to be installed.
 
 
+## Steps done by the Operator
+
+1. Accept all the required input
+2. Assemble the spark-submit command
+3. Execute the spark-submit command on the executor node
+
+
 ### How to use the Operator
 
 There are some examples on how to use the operator under example_dags.
@@ -64,7 +70,7 @@ Import the SparkSubmitOperator using the following line:
     ```
 
 
-## Livy Spark Operator - STILL IN PROGRESS
+## Livy Spark Operator
 
 ### Operator Definition
 
@@ -98,6 +104,17 @@ Parameters:
       * Set the Conn Type as "http"
       * Set the host
       * Set the port (default for livy is 8998)
+
+
+## Steps done by the Operator
+
+1. Accept all the required inputs
+2. Establish an HTTP Connection with the Livy Server via the information provided in the http_conn_id
+3. Create a dedicated Livy Spark Session for the execution of the Spark script provided
+4. Submit the Spark script code
+5. Poll to see if the Spark script has completed running
+6. Print the logs and the output of the Spark script
+7. Close the Livy Spark Session
 
 
 ### How to use the Operator
