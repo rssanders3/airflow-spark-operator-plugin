@@ -22,10 +22,10 @@ DAG_ID = os.path.basename(__file__).replace(".pyc", "").replace(".py", "")
 HTTP_CONN_ID = "livy_http_conn"
 SESSION_TYPE = "sparkr"
 SPARK_SCRIPT = """
-cat("sc: ", sc)
+print(cat("sc: ", sc))
 
 rdd = SparkR:::parallelize(sc, 1:5, slices)
-SparkR:::collect(rdd)
+print(SparkR:::collect(rdd))
 """
 
 default_args = {

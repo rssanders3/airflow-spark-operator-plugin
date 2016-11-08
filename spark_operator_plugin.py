@@ -20,6 +20,7 @@ from airflow.utils import apply_defaults, AirflowException
 import logging
 import textwrap
 import time
+import json
 
 
 class SparkSubmitOperator(BashOperator):
@@ -142,7 +143,10 @@ class LivySparkOperator(BaseOperator):
 
     template_fields = ['spark_script']  # todo : make sure this works
     template_ext = ['.py', '.R']
-    ui_color = '#e47128'  # todo: new color
+    ui_color = '#f0701f'  # todo: new color?
+
+    session_state_polling_interval = 10
+    acceptable_response_codes = [200, 201]
 
     @apply_defaults
     def __init__(
@@ -169,28 +173,40 @@ class LivySparkOperator(BaseOperator):
         logging.info("Finished validating arguments")
 
         logging.info("Getting Livy Session Id from Server...")
-        session_id = self._get_session_id()
+        session_id = self._create_session()
         logging.info("Finished getting Livy Session Id from Server. (session_id: " + str(session_id) + ")")
 
-        if session_id is None:
+        if session_id is None or session_id == "":
             raise AirflowException("Could not obtain a Session ID from Livy Server")
 
         logging.info("Submitting spark script...")
-        statement_id, response = self._submit_spark_script(session_id=session_id)
-        logging.info("Finished submitting spark script. (statement_id: " + str(statement_id) + ", response: " + str(response) + ")")
+        statement_id, overall_statements_state = self._submit_spark_script(session_id=session_id)
+        logging.info("Finished submitting spark script. (statement_id: " + str(statement_id) + ", overall_statements_state: " + str(overall_statements_state) + ")")
 
-        if response is None:
+        if overall_statements_state == "running":
             logging.info("Spark job did not complete immediately. Starting to Poll for completion...")
-            while response is None:  # todo: test execution_timeout
-                logging.info("Sleeping for " + self.poll_interval + " seconds")
-                time.sleep(self.poll_interval)
-                logging.info("Checking if Spark job has completed...")
-                response = self._get_session_statement_response(session_id=session_id, statement_id=statement_id)
-                logging.info("Finished checking if Spark job has completed. (response: " + str(response) + ")")
 
-        logging.info("Finished Polling for completion. (response: " + str(response) + ")")
+        while overall_statements_state == "running":  # todo: test execution_timeout
+            logging.info("Sleeping for " + str(self.poll_interval) + " seconds")
+            time.sleep(self.poll_interval)
+            logging.info("Checking if Spark job has completed...")
+            statements = self._get_session_statements(session_id=session_id)
+
+            is_all_complete = True
+            for statement in statements:
+                if statement["state"] == "running":
+                    is_all_complete = False
+
+            if is_all_complete:
+                overall_statements_state = "finished"
+            logging.info("Finished checking if Spark job has completed. (overall_statements_state: " + str(overall_statements_state) + ")")
+
+        logging.info("Finished Polling for completion.")
 
         logging.info("Session Logs: " + str(self._get_session_logs(session_id=session_id)))
+
+        for statement in self._get_session_statements(session_id):
+            logging.info("statement '" + str(statement["id"]) + "' output:\n" + str(statement["output"]))
 
         logging.info("Closing session...")
         response = self._close_session(session_id=session_id)
@@ -207,27 +223,27 @@ class LivySparkOperator(BaseOperator):
                 "session_kind argument is invalid. It should be set to 'spark', 'pyspark', or 'sparkr'. (value: '" + str(
                     self.session_kind) + "')")
 
-    def _get_session_id(self):
-        sessions = self._get_sessions()
-        session_id = None
-        for session in sessions:
-            if self.session_kind in session:
-                session_id = ""
-
-        if session_id is None:
-            session_id = self._create_session()
-
-        return session_id
-
     def _get_sessions(self):
         method = "GET"
         endpoint = "sessions"
-        return self._http_rest_call(method=method, endpoint=endpoint)
+        response = self._http_rest_call(method=method, endpoint=endpoint)
+
+        if response.status_code in self.acceptable_response_codes:
+            return response.json()["sessions"]
+        else:
+            raise AirflowException("Call to get sessions didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
+
+    def _get_session(self, session_id):
+        sessions = self._get_sessions()
+        for session in sessions:
+            if session["id"] == session_id:
+                return session
 
     def _get_session_logs(self, session_id):
         method = "GET"
-        endpoint = "sessions/" + session_id + "/logs"
-        return self._http_rest_call(method=method, endpoint=endpoint)
+        endpoint = "sessions/" + str(session_id) + "/log"
+        response = self._http_rest_call(method=method, endpoint=endpoint)
+        return response.json()
 
     def _create_session(self):
         method = "POST"
@@ -239,11 +255,30 @@ class LivySparkOperator(BaseOperator):
 
         response = self._http_rest_call(method=method, endpoint=endpoint, data=data)
 
-        return response.get_session()  # todo: create function to get sessions from response
+        if response.status_code in self.acceptable_response_codes:
+            response_json = response.json()
+            session_id = response_json["id"]
+            session_state = response_json["state"]
+
+            if session_state == "starting":
+                logging.info("Session is starting. Polling to see if it is ready...")
+
+            while session_state == "starting":
+                logging.info("Sleeping for " + str(self.session_state_polling_interval) + " seconds")
+                time.sleep(self.session_state_polling_interval)
+                session_state_check_response = self._get_session(session_id=session_id)
+                session_state = session_state_check_response["state"]
+                logging.info("Got latest session state as '" + session_state + "'")
+
+            return session_id
+        else:
+            raise AirflowException("Call to create a new session didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
 
     def _submit_spark_script(self, session_id):
         method = "POST"
         endpoint = "sessions/" + str(session_id) + "/statements"
+
+        logging.info("Executing Spark Script: \n" + str(self.spark_script))
 
         data = {
             'code': textwrap.dedent(self.spark_script)
@@ -251,32 +286,39 @@ class LivySparkOperator(BaseOperator):
 
         response = self._http_rest_call(method=method, endpoint=endpoint, data=data)
 
-        statement_id = None
-        return statement_id, response
+        if response.status_code in self.acceptable_response_codes:
+            response_json = response.json()
+            return response_json["id"], response_json["state"]
+        else:
+            raise AirflowException("Call to create a new statement didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
 
-    def _get_session_statement_response(self, session_id, statement_id):
+    def _get_session_statements(self, session_id):
         method = "GET"
         endpoint = "sessions/" + str(session_id) + "/statements"
         response = self._http_rest_call(method=method, endpoint=endpoint)
 
-        for statement in response.get_statements():  # todo: create function to get statements from response
-            if statement.get_id() == statement_id:  # todo: create function to get statement_id from statement
-                return response
-
-        return None
+        if response.status_code in self.acceptable_response_codes:
+            response_json = response.json()
+            statements = response_json["statements"]
+            return statements
+        else:
+            raise AirflowException("Call to get the session statement response didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
 
     def _close_session(self, session_id):
         method = "DELETE"
-        url_path = "sessions/" + str(session_id)
-        endpoint = self._get_endpoint(url_path)
+        endpoint = "sessions/" + str(session_id)
         return self._http_rest_call(method=method, endpoint=endpoint)
 
     def _http_rest_call(self, method, endpoint, data=None, headers=None, extra_options=None):
         if not extra_options:
             extra_options = {}
-        logging.info("Performing HTTP REST call... (method: " + str(method) + ", endpoint: " + str(endpoint) + ", data: " + str(data) + ", headers: " + str(headers) + ")")
+        logging.debug("Performing HTTP REST call... (method: " + str(method) + ", endpoint: " + str(endpoint) + ", data: " + str(data) + ", headers: " + str(headers) + ")")
         self.http.method = method
-        response = self.http.run(endpoint, data, headers, extra_options=extra_options)
+        response = self.http.run(endpoint, json.dumps(data), headers, extra_options=extra_options)
+
+        logging.debug("status_code: " + str(response.status_code))
+        logging.debug("response_as_json: " + str(response.json()))
+
         return response
 
 

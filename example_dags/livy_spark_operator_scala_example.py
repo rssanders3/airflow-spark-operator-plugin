@@ -22,6 +22,8 @@ DAG_ID = os.path.basename(__file__).replace(".pyc", "").replace(".py", "")
 HTTP_CONN_ID = "livy_http_conn"
 SESSION_TYPE = "spark"
 SPARK_SCRIPT = """
+import java.util
+
 println("sc: " + sc)
 
 val rdd = sc.parallelize(1 to 5)
