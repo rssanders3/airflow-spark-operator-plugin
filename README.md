@@ -19,9 +19,16 @@ A plugin to Apache Airflow (Documentation: https://pythonhosted.org/airflow/, So
     
     * You may have to create the Airflow Plugins Directory folder as it is not created by default
  
+    * quick way of doing this:
+    
+        $ cd {AIRFLOW_PLUGINS_FOLDER}
+        $ wget https://raw.githubusercontent.com/rssanders3/airflow-zip-operator-plugin/master/zip_operator_plugin.py
+ 
 2. Restart the Airflow Services
 
-3. Your done!
+3. Create or Deploy DAGs which utilize the Operator
+
+4. Your done!
 
 
 ## Spark Submit Operator
