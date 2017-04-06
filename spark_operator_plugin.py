@@ -16,7 +16,7 @@ from airflow.plugins_manager import AirflowPlugin
 from airflow.hooks import HttpHook
 from airflow.models import BaseOperator
 from airflow.operators import BashOperator
-from airflow.utils import apply_defaults, AirflowException
+from airflow.utils import apply_defaults
 import logging
 import textwrap
 import time
@@ -215,10 +215,10 @@ class LivySparkOperator(BaseOperator):
 
     def _validate_arguments(self):
         if self.session_kind is None or self.session_kind == "":
-            raise AirflowException(
+            raise Exception(
                 "session_kind argument is invalid. It is empty or None. (value: '" + str(self.session_kind) + "')")
         elif self.session_kind not in ["spark", "pyspark", "sparkr"]:
-            raise AirflowException(
+            raise Exception(
                 "session_kind argument is invalid. It should be set to 'spark', 'pyspark', or 'sparkr'. (value: '" + str(
                     self.session_kind) + "')")
 
@@ -230,7 +230,7 @@ class LivySparkOperator(BaseOperator):
         if response.status_code in self.acceptable_response_codes:
             return response.json()["sessions"]
         else:
-            raise AirflowException("Call to get sessions didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
+            raise Exception("Call to get sessions didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
 
     def _get_session(self, session_id):
         sessions = self._get_sessions()
@@ -272,7 +272,7 @@ class LivySparkOperator(BaseOperator):
 
             return session_id
         else:
-            raise AirflowException("Call to create a new session didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
+            raise Exception("Call to create a new session didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
 
     def _submit_spark_script(self, session_id):
         method = "POST"
@@ -290,7 +290,7 @@ class LivySparkOperator(BaseOperator):
             response_json = response.json()
             return response_json["id"], response_json["state"]
         else:
-            raise AirflowException("Call to create a new statement didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
+            raise Exception("Call to create a new statement didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
 
     def _get_session_statements(self, session_id):
         method = "GET"
@@ -302,7 +302,7 @@ class LivySparkOperator(BaseOperator):
             statements = response_json["statements"]
             return statements
         else:
-            raise AirflowException("Call to get the session statement response didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
+            raise Exception("Call to get the session statement response didn't return " + str(self.acceptable_response_codes) + ". Returned '" + str(response.status_code) + "'.")
 
     def _close_session(self, session_id):
         method = "DELETE"
