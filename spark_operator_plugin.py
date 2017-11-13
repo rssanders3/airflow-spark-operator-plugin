@@ -196,7 +196,7 @@ class LivySparkOperator(BaseOperator):
                     is_all_complete = False
 
                 # In case one of the statements finished with errors throw exception
-                elif statement["state"] != 'available':
+                elif statement["state"] != 'available' or statement["output"]["status"] == 'error':
                     logging.error("Statement failed. (state: " + str(statement["state"]) + ". Output:\n" +
                                   str(statement["output"]))
                     response = self._close_session(session_id=session_id)
