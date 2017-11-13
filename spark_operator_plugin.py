@@ -145,6 +145,7 @@ class LivySparkOperator(BaseOperator):
     ui_color = '#34a8dd'  # Clouderas Main Color: Blue
 
     acceptable_response_codes = [200, 201]
+    statement_non_terminated_status_list = ['waiting', 'running']
 
     @apply_defaults
     def __init__(
@@ -178,12 +179,12 @@ class LivySparkOperator(BaseOperator):
         statement_id, overall_statements_state = self._submit_spark_script(session_id=session_id)
         logging.info("Finished submitting spark script. (statement_id: " + str(statement_id) + ", overall_statements_state: " + str(overall_statements_state) + ")")
 
-        poll_for_completion = (overall_statements_state == "running")
+        poll_for_completion = (overall_statements_state in self.statement_non_terminated_status_list)
 
         if poll_for_completion:
             logging.info("Spark job did not complete immediately. Starting to Poll for completion...")
 
-        while overall_statements_state == "running":  # todo: test execution_timeout
+        while overall_statements_state in self.statement_non_terminated_status_list:  # todo: test execution_timeout
             logging.info("Sleeping for " + str(self.poll_interval) + " seconds...")
             time.sleep(self.poll_interval)
             logging.info("Finished sleeping. Checking if Spark job has completed...")
@@ -191,8 +192,17 @@ class LivySparkOperator(BaseOperator):
 
             is_all_complete = True
             for statement in statements:
-                if statement["state"] == "running":
+                if statement["state"] in self.statement_non_terminated_status_list:
                     is_all_complete = False
+
+                # In case one of the statements finished with errors throw exception
+                elif statement["state"] != 'available':
+                    logging.error("Statement failed. (state: " + str(statement["state"]) + ". Output:\n" +
+                                  str(statement["output"]))
+                    response = self._close_session(session_id=session_id)
+                    logging.error("Closed session. (response: " + str(response) + ")")
+                    raise Exception("Statement failed. (state: " + str(statement["state"]) + ". Output:\n" +
+                                    str(statement["output"]))
 
             if is_all_complete:
                 overall_statements_state = "available"
