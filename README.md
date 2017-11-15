@@ -1,4 +1,4 @@
-# airflow-spark-operator-plugin
+# airflow-spark-operator-plugin [![build passing](https://jenkins-public.personali.io/badge-icon?organization=personali&branch=master&project=airflow-spark-operator-plugin)](http://172.34.1.161:8080/view/Organization/job/personali/job/airflow-spark-operator-plugin/job/master/)
 
 ## Description
 
