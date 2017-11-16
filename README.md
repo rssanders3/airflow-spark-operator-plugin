@@ -1,5 +1,7 @@
 # airflow-spark-operator-plugin
 
+[![build passing](https://jenkins-public.personali.io/badge-icon?organization=personali&branch=master&project=airflow-spark-operator-plugin)](http://172.34.1.161:8080/view/Organization/job/personali/job/airflow-spark-operator-plugin/job/master/)
+
 ## Description
 
 A plugin to Apache Airflow (Documentation: https://pythonhosted.org/airflow/, Source Code: https://github.com/apache/incubator-airflow) to allow you to run Apache Spark Commands as an Operator from Workflows
