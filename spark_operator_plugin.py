@@ -74,7 +74,7 @@ class SparkSubmitOperator(BashOperator):
             application_file,
             main_class=None,
             master=None,
-            conf=None,
+            conf={},
             deploy_mode=None,
             other_spark_options=None,
             application_args=None,
@@ -90,7 +90,7 @@ class SparkSubmitOperator(BashOperator):
         self.application_file = application_file
         self.main_class = main_class
         self.master = master
-        self.conf = conf or {}
+        self.conf = conf
         self.deploy_mode = deploy_mode
         self.other_spark_options = other_spark_options
         self.application_args = application_args
