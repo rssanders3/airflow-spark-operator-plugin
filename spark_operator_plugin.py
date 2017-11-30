@@ -39,9 +39,10 @@ class SparkSubmitOperator(BashOperator):
    :param master: The master value for the cluster.
         (e.g. spark://23.195.26.187:7077 or yarn-client)
    :type master: string
-   :param conf: Arbitrary Spark configuration property in key=value format.
-        For values that contain spaces wrap “key=value” in quotes.
-   :type conf: string
+   :param conf: Dictionary consisting of arbitrary Spark configuration properties.
+        (e.g. {"spark.eventLog.enabled": "false",
+               "spark.executor.extraJavaOptions": "-XX:+PrintGCDetails -XX:+PrintGCTimeStamps"}
+   :type conf: dict
    :param deploy_mode: Whether to deploy your driver on the worker nodes
         (cluster) or locally as an external client (default: client)
    :type deploy_mode: string
@@ -73,7 +74,7 @@ class SparkSubmitOperator(BashOperator):
             application_file,
             main_class=None,
             master=None,
-            conf=None,
+            conf={},
             deploy_mode=None,
             other_spark_options=None,
             application_args=None,
@@ -104,8 +105,9 @@ class SparkSubmitOperator(BashOperator):
             self.bash_command += "--master " + self.master + " "
         if self.is_not_null_and_is_not_empty_str(self.deploy_mode):
             self.bash_command += "--deploy-mode " + self.deploy_mode + " "
-        if self.is_not_null_and_is_not_empty_str(self.conf):
-            self.bash_command += "--conf " + self.conf + " "
+        for conf_key, conf_value in self.conf.items():
+            if self.is_not_null_and_is_not_empty_str(conf_key) and self.is_not_null_and_is_not_empty_str(conf_value):                
+                self.bash_command += "--conf " + "'" + conf_key + "=" + conf_value + "'" + " "
         if self.is_not_null_and_is_not_empty_str(self.other_spark_options):
             self.bash_command += self.other_spark_options + " "
 
