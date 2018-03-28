@@ -47,7 +47,7 @@ Parameters:
 
 * **main_class** (string) - The entry point for your application (e.g. org.apache.spark.examples.SparkPi)
 * **master** (string) - The master value for the cluster. (e.g. spark://23.195.26.187:7077 or yarn-client)
-* **conf** (string) - Arbitrary Spark configuration property in key=value format. For values that contain spaces wrap “key=value” in quotes. (templated)
+* **conf** (dict) - Arbitrary Spark configuration property in dict format. For values that contain spaces wrap “value” in quotes.
 * **deploy_mode** (string) - Whether to deploy your driver on the worker nodes (cluster) or locally as an external client (default: client) 
 * **other_spark_options** (string) - Other options you would like to pass to the spark submit command that isn't covered by the current options. (e.g. --files /path/to/file.xml) (templated)
 * **application_file** (string) - Path to a bundled jar including your application and all dependencies. The URL must be globally visible inside of your cluster, for instance, an hdfs:// path or a file:// path that is present on all nodes.
@@ -74,9 +74,19 @@ There are some examples on how to use the operator under example_dags.
 
 Import the SparkSubmitOperator using the following line:
 
-    ```
-    from airflow.operators import SparkSubmitOperator
-    ```
+```
+from airflow.operators import SparkSubmitOperator
+# ... default args and dag initialization
+t1 = SparkSubmitOperator(
+    task_id='spark-submit-task',
+    master="yarn",
+    deploy_mode="client",
+    conf={"spark.sql.option.name": "value"},
+    other_spark_options="--driver-memory 4g --executor-memory 4g --num-executors=5 --executor-cores=4",
+    application_file='/path/to/your/compiled/jar',
+    main_class='MyAppMainClass',
+    dag=dag)
+```
 
 
 ## Livy Spark Operator
