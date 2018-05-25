@@ -30,7 +30,7 @@ A plugin to Apache Airflow (Documentation: https://pythonhosted.org/airflow/, So
 
 3. Create or Deploy DAGs which utilize the Operator
 
-4. Your done!
+4. You're done!
 
 
 ## Spark Submit Operator
